@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "GPT Dictionary",
+  "version": "1.0",
+  "description": "Select a word to learn with GPT",
+  "permissions": ["contextMenus", "sidePanel", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}
