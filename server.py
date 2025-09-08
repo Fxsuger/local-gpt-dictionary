@@ -1,37 +1,37 @@
-# server.py
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 import os
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
 
-app = FastAPI(title="Local GPT Dictionary")
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-@app.get("/", include_in_schema=False)
-def index():
-    return HTMLResponse("""
-        <html><head><title>Local GPT Dictionary</title></head>
-        <body>
-            <h1>Local GPT Dictionary</h1>
-            <p>Try: <a href="/lookup?q=hello">/lookup?q=hello</a></p>
-            <p>Open API docs: <a href="/docs">/docs</a></p>
-        </body></html>
-    """)
+app = FastAPI()
 
-# example
-@app.get("/lookup")
-def lookup(q: str = Query(..., description="Word to look up")):
-    # TODO: Call local dictionary/model logic
-    return {"query": q, "definition": f"Definition of {q} (demo)"}
+async def stream_gpt(messages):
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": messages,
+        "stream": True,
+    }
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream("POST", url, headers=headers, json=payload) as resp:
+            async for line in resp.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    yield data.encode("utf-8")
 
-# 静态资源与 favicon
-if not os.path.exists("static"):
-    os.makedirs("static")
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    path = os.path.join("static", "favicon.ico")
-    if os.path.exists(path):
-        return FileResponse(path)
-    return HTMLResponse("", status_code=204)
+@app.post("/chat")
+async def chat(req: Request):
+    body = await req.json()
+    text = body.get("text", "")
+    messages = [
+        {"role": "system", "content": "You are an English-Chinese dictionary and language tutor."},
+        {"role": "user", "content": f"Please help me explain and learn this word or phrase：{text}"}
+    ]
+    return StreamingResponse(stream_gpt(messages), media_type="text/event-stream")
